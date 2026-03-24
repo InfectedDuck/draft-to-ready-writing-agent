@@ -1518,7 +1518,7 @@ def generate_draft(
     presence_penalty: float,
     frequency_penalty: float,
     llm_provider: str = "Mock (demo)",
-    openrouter_model: str = "mistralai/mistral-7b-instruct",
+    openrouter_model: str = "meta-llama/llama-3-8b-instruct",
 ):
     # -- Input validation --
     if not raw_notes or not raw_notes.strip():
@@ -1680,12 +1680,11 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent", js=FORCE_DARK_JS) as demo:
                     )
                     openrouter_model = gr.Dropdown(
                         choices=[
-                            "mistralai/mistral-7b-instruct",
                             "meta-llama/llama-3-8b-instruct",
                             "google/gemma-2-9b-it",
                             "qwen/qwen-2.5-7b-instruct",
                         ],
-                        value=os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct"),
+                        value=os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct"),
                         label="OpenRouter model",
                         visible=_has_key,
                     )

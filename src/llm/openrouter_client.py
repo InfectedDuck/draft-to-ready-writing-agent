@@ -9,7 +9,7 @@ import requests
 @dataclass
 class OpenRouterClient:
     api_key: str
-    model_name: str = "mistralai/mistral-7b-instruct"
+    model_name: str = "meta-llama/llama-3-8b-instruct"
     base_url: str = "https://openrouter.ai/api/v1/chat/completions"
     timeout_s: int = 120
     default_options: dict = field(default_factory=dict)
@@ -113,7 +113,7 @@ def get_openrouter_client(
     api_key: str | None = None,
 ) -> OpenRouterClient:
     key = api_key or os.getenv("OPENROUTER_API_KEY", "")
-    model = model_name or os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct")
+    model = model_name or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct")
     if not key:
         raise ValueError("OPENROUTER_API_KEY not set")
     return OpenRouterClient(api_key=key, model_name=model)

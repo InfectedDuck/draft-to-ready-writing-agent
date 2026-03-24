@@ -1,3 +1,13 @@
+---
+title: Draft-to-Ready Writing Agent
+emoji: ✍️
+colorFrom: indigo
+colorTo: green
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![Gradio 6](https://img.shields.io/badge/Gradio-6-FF7F50?logo=gradio&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)

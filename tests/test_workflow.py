@@ -14,7 +14,6 @@ def test_mock_workflow_produces_final():
         purpose="email reply",
         audience="teacher",
         tone="formal",
-        language="English",
         include_subject=True,
     )
     resp = run_draft_to_ready(req, llm_client=MockLLMClient())
@@ -32,7 +31,6 @@ def test_mock_workflow_after_answers_drafts():
         purpose="email reply",
         audience="teacher",
         tone="formal",
-        language="English",
         include_subject=True,
         finalize_requested=True,
     )
@@ -49,7 +47,6 @@ def test_ensemble_deduplicates_questions():
         purpose="extension request",
         audience="professor",
         tone="formal",
-        language="English",
     )
     options = _ollama_options_from_req(req)
     proceed, questions = _clarify_first(req, llm_client=MockLLMClient(), options=options)

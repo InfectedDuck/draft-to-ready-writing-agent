@@ -20,15 +20,16 @@ def _load_scoring_weights() -> Dict[str, float]:
     If `evals/scoring_weights.json` exists, it overrides defaults.
     """
     defaults = {
-        "w_closing": 1.0,
-        "w_next_step": 1.0,
-        "w_short": 1.0,
-        "w_subject": 1.0,
-        "w_word_size": 1.0,
-        "w_intent": 1.0,
-        "w_hallucination": 1.0,
-        "w_tone": 0.8,
-        "w_faithfulness": 0.8,
+        # Sorted by seriousness: content accuracy > tone/style > structure > formatting
+        "w_faithfulness": 1.5,     # Most important: does the draft reflect the user's notes?
+        "w_hallucination": 1.4,    # Critical: penalize fabricated details heavily
+        "w_intent": 1.2,           # Important: are required details (dates, amounts) present?
+        "w_tone": 1.1,             # Important: does it match the requested style preset?
+        "w_next_step": 0.9,        # Medium: actionable language matching the preset
+        "w_subject": 0.8,          # Medium: channel-appropriate subject line
+        "w_word_size": 0.6,        # Lower: word count target is a soft guideline
+        "w_closing": 0.5,          # Lower: sign-off is nice-to-have, not critical
+        "w_short": 0.4,            # Lowest: minimum length is a basic sanity check
     }
     try:
         weights_path = Path(__file__).resolve().parents[2] / "evals" / "scoring_weights.json"
@@ -429,7 +430,9 @@ def _score_draft_candidate(req: DraftRequest, draft: str) -> tuple[float, dict]:
             faithfulness_score = _word_overlap_faithfulness(source_text, draft)
 
     markers = _style_tone_markers_for_preset(req.style_preset)
-    tone_marker_hits = sum(1 for m in markers if m.lower() in draft_lower)
+    tone_markers_found = [m for m in markers if m.lower() in draft_lower]
+    tone_markers_missing = [m for m in markers if m.lower() not in draft_lower]
+    tone_marker_hits = len(tone_markers_found)
     tone_score = (tone_marker_hits / len(markers)) if markers else 0.0
 
     score = (
@@ -444,6 +447,35 @@ def _score_draft_candidate(req: DraftRequest, draft: str) -> tuple[float, dict]:
         + SCORING_WEIGHTS.get("w_faithfulness", 0.8) * faithfulness_score
     )
 
+    # Build faithfulness explanation for the UI.
+    faithfulness_explanation: Dict[str, Any] = {"score": round(faithfulness_score, 4), "method": "word_overlap"}
+    try:
+        from src.scoring.faithfulness import get_faithfulness_scorer
+        _ = get_faithfulness_scorer()
+        faithfulness_explanation["method"] = "sentence_embeddings"
+    except Exception:
+        pass
+    if source_text and draft:
+        # Provide word-level detail for explanation regardless of method.
+        stop_words = {
+            "i", "me", "my", "we", "our", "you", "your", "he", "she", "it", "they",
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+            "on", "with", "at", "by", "from", "as", "into", "about", "up", "out",
+            "if", "or", "and", "but", "not", "no", "so", "than", "too", "very",
+            "just", "that", "this", "these", "those", "what", "which", "who",
+            "when", "where", "how", "all", "each", "any", "both", "more", "most",
+            "other", "some", "such", "only", "own", "same", "also", "am", "an",
+        }
+        src_words = set(re.findall(r'\b[a-z]{3,}\b', source_text.lower())) - stop_words
+        draft_words = set(re.findall(r'\b[a-z]{3,}\b', draft_lower)) - stop_words
+        found_words = sorted(src_words & draft_words)
+        missing_words = sorted(src_words - draft_words)
+        faithfulness_explanation["source_keywords"] = list(src_words)[:20]
+        faithfulness_explanation["found_in_draft"] = found_words[:15]
+        faithfulness_explanation["missing_from_draft"] = missing_words[:15]
+
     details: Dict[str, Any] = {
         "word_count": wc,
         "has_subject": has_subject,
@@ -451,8 +483,12 @@ def _score_draft_candidate(req: DraftRequest, draft: str) -> tuple[float, dict]:
         "rubric": rubric,
         "intent_detail": intent_detail,
         "faithfulness_score": round(faithfulness_score, 4),
+        "faithfulness_explanation": faithfulness_explanation,
         "tone_marker_hits": tone_marker_hits,
         "tone_score": round(tone_score, 3),
+        "tone_markers_found": tone_markers_found,
+        "tone_markers_missing": tone_markers_missing,
+        "style_preset": req.style_preset,
         "component": {
             "closing_contrib": closing_contrib,
             "next_step_contrib": next_step_contrib,
@@ -505,10 +541,14 @@ def _generate_draft_variants(
                 "next_step_matched_phrases": next_step.get("matched_phrases", []),
                 "intent_score": details.get("intent_detail", {}).get("intent_score") if isinstance(details.get("intent_detail"), dict) else None,
                 "faithfulness_score": details.get("faithfulness_score"),
+                "faithfulness_explanation": details.get("faithfulness_explanation", {}),
                 "hallucination_contrib": details.get("intent_detail", {}).get("halluc_penalty") if isinstance(details.get("intent_detail"), dict) else None,
                 "halluc_notes": details.get("intent_detail", {}).get("halluc_notes", []) if isinstance(details.get("intent_detail"), dict) else [],
                 "tone_score": details.get("tone_score"),
                 "tone_marker_hits": details.get("tone_marker_hits"),
+                "tone_markers_found": details.get("tone_markers_found", []),
+                "tone_markers_missing": details.get("tone_markers_missing", []),
+                "style_preset": details.get("style_preset", ""),
                 "component": details.get("component", {}),
                 "text": draft_text,
             }
@@ -596,7 +636,6 @@ def _judge_draft_candidates(
         purpose=req.purpose,
         audience=req.audience,
         tone=req.tone,
-        language=req.language,
         style_preset=req.style_preset,
         word_size=req.word_size,
         include_subject=str(req.include_subject).lower(),
@@ -773,7 +812,6 @@ def _clarify_first(req: DraftRequest, *, llm_client: Any, options: dict) -> tupl
                 purpose=req.purpose,
                 audience=req.audience,
                 tone=req.tone,
-                language=req.language,
                 raw_notes=req.raw_notes,
                 user_answers=req.user_answers or "",
             )
@@ -847,7 +885,6 @@ def run_draft_to_ready(req: DraftRequest, *, llm_client: Any) -> DraftResponse:
         tone=req.tone,
         audience=req.audience,
         channel=req.channel,
-        language=req.language,
         include_subject=str(req.include_subject).lower(),
         word_count_block=word_count_block,
         raw_notes=combined_raw_notes,

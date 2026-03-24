@@ -8,7 +8,6 @@ Audience: {audience}
 Channel: {channel}
 Purpose: {purpose}
 Tone: {tone}
-Language: {language}
 Include a subject line (email only): {include_subject}
 
 Word count requirement:
@@ -79,7 +78,6 @@ Channel: {channel}
 Purpose: {purpose}
 Audience: {audience}
 Tone: {tone}
-Language: {language}
 
 Raw notes:
 {raw_notes}
@@ -124,7 +122,6 @@ Channel: {channel}
 Purpose: {purpose}
 Audience: {audience}
 Tone: {tone}
-Language: {language}
 Style preset: {style_preset}
 Word size target: {word_size}
 Include subject line (email only): {include_subject}

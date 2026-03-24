@@ -9,7 +9,6 @@ class DraftRequest(BaseModel):
     purpose: str = Field(..., min_length=1)
     audience: str = Field(..., min_length=1)
     tone: str = Field(..., min_length=1)
-    language: str = Field("English", min_length=1)
     channel: str = Field("Email", min_length=1)
     include_subject: bool = True
     word_size: Literal["Small", "Medium", "Large"] = "Medium"

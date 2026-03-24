@@ -1,12 +1,16 @@
-import json
 import os
 import random
+
+import requests as _requests_lib
+from dotenv import load_dotenv
+load_dotenv()
 
 import gradio as gr
 
 from src.agent.workflow import run_draft_to_ready
 from src.schemas.models import DraftRequest
 from src.llm.ollama_client import get_ollama_client
+from src.llm.openrouter_client import get_openrouter_client
 from src.llm.mock_client import MockLLMClient
 
 
@@ -14,6 +18,12 @@ from src.llm.mock_client import MockLLMClient
 # Design System CSS — Zinc/Slate dark theme with Indigo accent
 # ---------------------------------------------------------------------------
 CUSTOM_CSS = """
+html, :root { color-scheme: dark !important; }
+@media (prefers-color-scheme: light) {
+    body { background: var(--bg0) !important; color: var(--text) !important; }
+    .gradio-container { background: transparent !important; color: var(--text) !important; }
+}
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 :root{
@@ -89,9 +99,10 @@ label, .gr-label span{
   background: var(--card) !important;
   border: 1px solid var(--card-border) !important;
   border-radius: var(--radius-lg) !important;
-  padding: 24px 28px 20px !important;
+  padding: 24px 28px 24px !important;
   margin-bottom: 16px !important;
   box-shadow: var(--shadow-sm);
+  overflow: visible !important;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 .card-section:hover{
@@ -480,6 +491,19 @@ textarea::placeholder, input::placeholder{
   to{ opacity:1; transform:translateY(0); }
 }
 .fade-in{ animation: fadeInUp 0.4s ease forwards; }
+
+/* Force landing page centering (Gradio 6 overrides) */
+/* Force landing page centering (Gradio 6 overrides) */
+.lp-hero, .lp-hero h1, .lp-hero p, .lp-hero-sub { text-align: center !important; margin-left: auto !important; margin-right: auto !important; }
+.lp-section-label, .lp-section-title { text-align: center !important; margin-left: auto !important; margin-right: auto !important; }
+.lp { width: 100% !important; max-width: 100% !important; }
+#landing-page { max-width: 100% !important; padding: 0 !important; }
+#landing-page > div { max-width: 100% !important; }
+.lp-hero { display: flex !important; flex-direction: column !important; align-items: center !important; width: 100% !important; }
+.lp-hero h1 { width: 100% !important; max-width: 780px !important; }
+.lp-hero-sub { width: 100% !important; max-width: 520px !important; }
+.lp-features-grid { justify-items: center; }
+.lp-steps { justify-content: center !important; }
 """.strip()
 
 
@@ -687,6 +711,35 @@ LANDING_PAGE_HTML = """
     letter-spacing: 0.01em;
   }
 
+  /* ---- Deep dive ---- */
+  .lp-deep{ padding: 80px 32px; max-width: 900px; margin: 0 auto; }
+  .lp-deep h3{ font-size: 18px; font-weight: 700; color: #fafafa; margin: 32px 0 10px; }
+  .lp-deep h3:first-child{ margin-top: 0; }
+  .lp-deep p, .lp-deep li{ font-size: 14px; color: #a1a1aa; line-height: 1.7; margin: 0 0 8px; }
+  .lp-deep ul{ padding-left: 20px; margin: 0 0 16px; }
+  .lp-deep code{
+    background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 5px; padding: 1px 7px; font-size: 13px; color: #818cf8;
+    font-family: 'SF Mono', Consolas, monospace;
+  }
+  .lp-deep .formula{
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 16px 20px; margin: 12px 0 16px;
+    font-family: 'SF Mono', Consolas, monospace; font-size: 13px; color: #d4d4d8;
+    line-height: 1.8; overflow-x: auto;
+  }
+  .lp-param-grid{
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px; margin: 16px 0;
+  }
+  .lp-param-card{
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 20px;
+  }
+  .lp-param-card h4{ font-size: 14px; font-weight: 700; color: #fafafa; margin: 0 0 6px; }
+  .lp-param-card p{ font-size: 13px; margin: 0; }
+  .lp-param-card .range{ font-size: 12px; color: #6366f1; margin-top: 4px; }
+
   /* ---- Responsive ---- */
   @media (max-width: 768px){
     .lp-hero h1{ font-size: 36px; }
@@ -696,6 +749,7 @@ LANDING_PAGE_HTML = """
     .lp-steps{ flex-direction: column; align-items: center; gap: 24px; }
     .lp-step-arrow{ transform: rotate(90deg); font-size: 22px; padding: 0; }
     .lp-section-title{ font-size: 24px; }
+    .lp-param-grid{ grid-template-columns: 1fr; }
   }
 </style>
 
@@ -711,7 +765,7 @@ LANDING_PAGE_HTML = """
     </h1>
     <p class="lp-hero-sub">
       AI-powered writing agent that drafts, self-checks, and finalizes
-      your communications across any channel — in seconds.
+      your communications across any channel &mdash; in seconds.
     </p>
   </section>
 
@@ -723,17 +777,17 @@ LANDING_PAGE_HTML = """
       <div class="lp-feature-card">
         <div class="lp-feature-icon">&#9993;</div>
         <h3>Multi-Channel Drafts</h3>
-        <p>Email, WhatsApp, or Teams — each draft is formatted for the platform you need.</p>
+        <p>Email, WhatsApp, or Teams &mdash; each draft is formatted for the platform you need.</p>
       </div>
       <div class="lp-feature-card">
         <div class="lp-feature-icon">&#10004;</div>
         <h3>Self-Check Rubric</h3>
-        <p>Every draft is scored for tone, completeness, and audience fit before you see it.</p>
+        <p>13 quality checks &mdash; greeting, closing, tone, word count, channel rules, faithfulness, and hallucination detection.</p>
       </div>
       <div class="lp-feature-card">
         <div class="lp-feature-icon">&#9881;</div>
         <h3>Style Presets</h3>
-        <p>Professional, Friendly, Persuasive, or Creative — set the tone in one click.</p>
+        <p>Professional, Friendly, Persuasive, or Creative &mdash; each preset tunes temperature, penalties, and phrase matching.</p>
       </div>
     </div>
   </section>
@@ -741,25 +795,159 @@ LANDING_PAGE_HTML = """
   <!-- HOW IT WORKS -->
   <section class="lp-how">
     <div class="lp-section-label">How It Works</div>
-    <div class="lp-section-title">Three steps. Zero friction.</div>
+    <div class="lp-section-title">Five-stage agent pipeline</div>
     <div class="lp-steps">
       <div class="lp-step">
         <div class="lp-step-num">1</div>
-        <h3>Paste Your Notes</h3>
-        <p>Dump bullet points, fragments, or rough ideas — no formatting needed.</p>
+        <h3>Clarify</h3>
+        <p>Heuristic + LLM ensemble detects missing dates, amounts, or names and asks up to 6 targeted questions.</p>
       </div>
       <div class="lp-step-arrow">&#8594;</div>
       <div class="lp-step">
         <div class="lp-step-num">2</div>
-        <h3>AI Drafts &amp; Checks</h3>
-        <p>The agent clarifies, generates variants, and scores each draft automatically.</p>
+        <h3>Draft &amp; Score</h3>
+        <p>Generates up to 5 variants, scores each on 9 weighted components, and picks the best one.</p>
       </div>
       <div class="lp-step-arrow">&#8594;</div>
       <div class="lp-step">
         <div class="lp-step-num">3</div>
-        <h3>Copy &amp; Send</h3>
-        <p>Get a polished, ready-to-paste message you can send immediately.</p>
+        <h3>Check &amp; Finalize</h3>
+        <p>Runs 13 quality checks, detects hallucinations, then optionally rewrites to fix rubric issues.</p>
       </div>
+    </div>
+  </section>
+
+  <!-- DEEP DIVE: HOW SCORING WORKS -->
+  <section class="lp-deep">
+    <div class="lp-section-label">Under the Hood</div>
+    <div class="lp-section-title">How the scoring engine works</div>
+
+    <h3>The Scoring Formula</h3>
+    <p>Every draft variant is scored by a weighted sum of 9 components. The variant with the highest total score is selected.</p>
+    <div class="formula">
+score = w_closing &times; closing<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_next_step &times; next_step<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_short &times; min_length<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_subject &times; subject_line<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_word_size &times; word_count_fit<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_intent &times; intent_coverage<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_hallucination &times; halluc_penalty<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_tone &times; tone_match<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; + w_faithfulness &times; faithfulness
+    </div>
+
+    <h3>What Each Score Means</h3>
+    <ul>
+      <li><strong>Closing</strong> (+1.0 / -0.5) &mdash; Does the draft end with a sign-off? Looks for: <code>sincerely</code>, <code>regards</code>, <code>thanks</code>, <code>best</code>, <code>cheers</code>, etc.</li>
+      <li><strong>Next Step</strong> (-0.5 to +1.5) &mdash; Does the draft include actionable language matching your style preset? Each preset has a database of weighted phrases (e.g., Professional: "please let me know" = 1.0, "kindly" = 0.6). The matched weight is converted to a score: <code>delta = -0.5 + 2.0 &times; (matched_weight / total_weight)</code>.</li>
+      <li><strong>Min Length</strong> (+0.8 / -1.0) &mdash; Is the draft at least 40 words? Short drafts are heavily penalized.</li>
+      <li><strong>Subject Line</strong> (+0.7 / -0.8 / -1.0) &mdash; Email channel rewards a "Subject:" line when requested (+0.7), penalizes its absence (-0.8). Non-email channels penalize a subject line (-1.0).</li>
+      <li><strong>Word Count Fit</strong> (+1.0 or penalty) &mdash; Is the word count in the target range? Small: 60-90, Medium: 110-160, Large: 180-260. Penalty is proportional to distance: <code>-min(1.5, distance / target)</code>.</li>
+      <li><strong>Intent Coverage</strong> (0.0 to 1.0) &mdash; If the user provided specific dates, amounts, or university names, does the draft include them? <code>score = details_found / details_required</code>.</li>
+      <li><strong>Hallucination Penalty</strong> (0 or -1.0 each) &mdash; If the user did NOT provide a date but the draft invents one, that is -1.0. Same for fabricated amounts.</li>
+      <li><strong>Tone Match</strong> (0.0 to 1.0) &mdash; Fraction of style-preset markers found. Professional looks for: "kindly", "at your earliest convenience", "i look forward", etc. Friendly looks for: "when you get a chance", "thanks so much", etc.</li>
+      <li><strong>Faithfulness</strong> (0.0 to 1.0) &mdash; How closely does the draft reflect your original notes? Uses semantic similarity (sentence-transformers) when available, or word-overlap as fallback. Calculated as: for each source sentence, find the best-matching draft sentence by cosine similarity, then average all matches.</li>
+    </ul>
+
+    <h3>Faithfulness Scoring</h3>
+    <p>When <code>sentence-transformers</code> is installed, faithfulness is measured using the <strong>all-MiniLM-L6-v2</strong> model:</p>
+    <ul>
+      <li>Both your notes and the draft are split into sentences.</li>
+      <li>Each sentence is converted to a 384-dimensional embedding vector.</li>
+      <li>For each source sentence, the system finds the draft sentence with the highest cosine similarity.</li>
+      <li>The faithfulness score is the average of these best-match similarities (0% = no overlap, 100% = perfect match).</li>
+    </ul>
+    <p>Without sentence-transformers, a <strong>word-overlap fallback</strong> is used: it extracts meaningful words (3+ characters, excluding 56 common stop words) from both texts and computes <code>overlap / source_words</code>.</p>
+
+    <h3>Hallucination Detection</h3>
+    <p>When <code>sentence-transformers</code> is installed, an NLI (Natural Language Inference) model (<strong>cross-encoder/nli-deberta-v3-xsmall</strong>) classifies each draft sentence against your original notes:</p>
+    <ul>
+      <li><strong>Entailed</strong> &mdash; the sentence is supported by your notes (good).</li>
+      <li><strong>Neutral</strong> &mdash; the sentence is neither supported nor contradicted. Flagged if confidence &ge; 70%.</li>
+      <li><strong>Contradiction</strong> &mdash; the sentence contradicts your notes (always flagged).</li>
+    </ul>
+    <p>The hallucination score = fraction of flagged sentences. If it exceeds 30% (configurable), a warning is shown.</p>
+
+    <h3>Quality Checks (13 total)</h3>
+    <ul>
+      <li><strong>Has Greeting</strong> &mdash; starts with Hi, Hello, Dear, etc.</li>
+      <li><strong>Has Closing</strong> &mdash; ends with Sincerely, Regards, Thanks, Best, etc.</li>
+      <li><strong>Next Step Language</strong> &mdash; includes phrases like "please", "let me know", "feel free".</li>
+      <li><strong>Minimum Length</strong> &mdash; at least 40 words.</li>
+      <li><strong>Has Paragraphs</strong> &mdash; 3+ lines (not a wall of text).</li>
+      <li><strong>Tone Match</strong> &mdash; at least 1 style-preset marker found.</li>
+      <li><strong>Word Count Target</strong> &mdash; word count within the Small/Medium/Large range.</li>
+      <li><strong>Email: Subject Line</strong> &mdash; present when requested.</li>
+      <li><strong>Email: Greeting</strong> &mdash; greeting present for email channel.</li>
+      <li><strong>WhatsApp: No Subject</strong> &mdash; no "Subject:" line in WhatsApp messages.</li>
+      <li><strong>WhatsApp: Concise</strong> &mdash; under 120 words for WhatsApp.</li>
+      <li><strong>Teams: No Subject</strong> &mdash; no "Subject:" line for Teams.</li>
+      <li><strong>Teams: Professional</strong> &mdash; has both greeting and closing.</li>
+    </ul>
+
+    <h3>Clarification Engine</h3>
+    <p>Before drafting, the agent checks if critical information is missing. It uses an <strong>ensemble of heuristics + LLM</strong>:</p>
+    <ul>
+      <li><strong>Heuristic questions</strong> &mdash; pattern-matches for missing dates (regex: MM/DD, "March 12", weekday names, "5pm"), missing amounts ($, EUR, "deposit"), or unspecified university names.</li>
+      <li><strong>LLM questions</strong> &mdash; the LLM analyzes your notes at low temperature (0.3) and suggests additional questions.</li>
+      <li><strong>Deduplication</strong> &mdash; questions from both sources are merged, near-duplicates removed (cosine similarity &gt; 0.85, or substring match), and capped at 6.</li>
+      <li><strong>Conservative proceed</strong> &mdash; drafting begins only when BOTH heuristic and LLM agree all critical info is present.</li>
+    </ul>
+  </section>
+
+  <!-- GENERATION PARAMETERS -->
+  <section class="lp-deep">
+    <div class="lp-section-label">Generation Controls</div>
+    <div class="lp-section-title">What the parameters do</div>
+
+    <div class="lp-param-grid">
+      <div class="lp-param-card">
+        <h4>Temperature</h4>
+        <p>Controls randomness. Lower = more predictable and focused. Higher = more creative and varied.</p>
+        <div class="range">Range: 0.0 &ndash; 2.0 &bull; Professional default: 0.4 &ndash; 0.9</div>
+      </div>
+      <div class="lp-param-card">
+        <h4>Top-P (Nucleus Sampling)</h4>
+        <p>Only considers tokens whose cumulative probability reaches this threshold. Lower = fewer choices = more focused output.</p>
+        <div class="range">Range: 0.0 &ndash; 1.0 &bull; Default: 0.9</div>
+      </div>
+      <div class="lp-param-card">
+        <h4>Top-K</h4>
+        <p>Limits the model to the K most likely next tokens at each step. Lower = more conservative.</p>
+        <div class="range">Range: 0 &ndash; 200 &bull; Professional default: 20 &ndash; 45</div>
+      </div>
+      <div class="lp-param-card">
+        <h4>Repeat Penalty</h4>
+        <p>Penalizes tokens that already appeared in the output. Higher = less repetition.</p>
+        <div class="range">Range: 0.0 &ndash; 2.5 &bull; Default: 1.1</div>
+      </div>
+      <div class="lp-param-card">
+        <h4>Presence Penalty</h4>
+        <p>Encourages the model to talk about new topics. Positive values push for variety; negative values allow repetition.</p>
+        <div class="range">Range: -2.0 &ndash; 2.5 &bull; Default: 0.0</div>
+      </div>
+      <div class="lp-param-card">
+        <h4>Frequency Penalty</h4>
+        <p>Reduces the chance of repeating the same word proportional to how often it already appeared.</p>
+        <div class="range">Range: -2.0 &ndash; 2.5 &bull; Default: 0.0</div>
+      </div>
+    </div>
+
+    <h3>Style Presets</h3>
+    <p>Each preset auto-tunes the parameters above based on your creativity intensity slider (0&ndash;100):</p>
+    <ul>
+      <li><strong>Professional</strong> &mdash; Low temperature (0.4&ndash;0.9), tight top-k (20&ndash;45). Produces formal, predictable output.</li>
+      <li><strong>Friendly</strong> &mdash; Medium temperature (0.6&ndash;1.3), wider top-k (30&ndash;75). Warmer, more natural tone.</li>
+      <li><strong>Persuasive</strong> &mdash; Higher temperature (0.75&ndash;1.5), wide top-k (40&ndash;110). Bolder word choices, stronger arguments.</li>
+      <li><strong>Creative</strong> &mdash; Highest temperature (1.05&ndash;2.0), widest top-k (80&ndash;160). Most varied and inventive output.</li>
+    </ul>
+
+    <h3>Scoring Weights</h3>
+    <p>The default weights used for the scoring formula (overridable via <code>evals/scoring_weights.json</code>):</p>
+    <div class="formula">
+w_closing: 1.0 &nbsp;&bull;&nbsp; w_next_step: 1.0 &nbsp;&bull;&nbsp; w_short: 1.0<br>
+w_subject: 1.0 &nbsp;&bull;&nbsp; w_word_size: 1.0 &nbsp;&bull;&nbsp; w_intent: 1.0<br>
+w_hallucination: 1.0 &nbsp;&bull;&nbsp; w_tone: 0.8 &nbsp;&bull;&nbsp; w_faithfulness: 0.8
     </div>
   </section>
 
@@ -980,87 +1168,159 @@ def _render_rubric_html(rubric: dict) -> str:
             break
 
     adv_parts = []
+    sv = sel_variant or {}
 
-    # 4a: Component score breakdown for the selected variant
-    comp = (sel_variant or {}).get("component", {})
+    _adv_hdr = (
+        '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;'
+        'letter-spacing:0.06em;margin:18px 0 8px;">{}</div>'
+    )
+    _adv_pill_pass = (
+        '<span style="display:inline-block;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);'
+        'border-radius:6px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px;color:#22c55e;">{}</span>'
+    )
+    _adv_pill_fail = (
+        '<span style="display:inline-block;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);'
+        'border-radius:6px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px;color:#ef4444;">{}</span>'
+    )
+    _adv_tip = (
+        '<div style="margin:4px 0 8px;padding:8px 12px;background:rgba(99,102,241,0.06);'
+        'border:1px solid rgba(99,102,241,0.12);border-radius:8px;font-size:12px;'
+        'color:var(--text-secondary,#d4d4d8);line-height:1.5;">'
+        '<strong style="color:var(--accent-hover,#818cf8);">Tip:</strong> {}</div>'
+    )
+
+    def _adv_row(label, val, weight, rule, reason, tip):
+        if val is None:
+            return ""
+        vf = float(val)
+        wv = vf * weight
+        c = "var(--accent2)" if vf > 0 else "var(--danger)" if vf < 0 else "var(--muted)"
+        s = "+" if vf > 0 else ""
+        icon = "&#10003;" if vf > 0 else "&#10007;" if vf < 0 else "&#9679;"
+        tip_html = _adv_tip.format(tip) if vf <= 0 and tip else ""
+        return (
+            f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<td style="padding:6px 10px;font-weight:600;color:var(--text);">{label}</td>'
+            f'<td style="padding:6px 10px;text-align:center;"><span style="color:{c};font-weight:600;">{s}{vf:.3f}</span></td>'
+            f'<td style="padding:6px 10px;text-align:center;color:var(--subtle);font-size:12px;">&times;{weight:.1f}</td>'
+            f'<td style="padding:6px 10px;text-align:center;"><span style="color:{c};font-weight:600;">{s}{wv:.3f}</span></td>'
+            f'<td style="padding:6px 10px;font-size:11px;color:var(--subtle);">{rule}</td></tr>'
+            f'<tr><td colspan="5" style="padding:0 10px 2px;">'
+            f'<div style="font-size:11px;color:{c};margin-bottom:1px;">{icon} {reason}</div>'
+            f'{tip_html}</td></tr>'
+        )
+
+    comp = sv.get("component", {})
     if comp:
-        score_rows = []
-        comp_explanations = {
-            "closing_contrib": ("Closing", "+1.0 if sign-off found, -0.5 if missing"),
-            "next_step_contrib": ("Next Step", "Phrase matching against preset db; range -0.5 to +1.5"),
-            "short_contrib": ("Min Length", "+0.8 if ≥40 words, -1.0 if shorter"),
-            "subject_contrib": ("Subject Line", "Email: +0.7 if present when asked; non-email: -1.0 if present"),
-            "word_size_contrib": ("Word Count", "+1.0 if in target range, penalty proportional to distance"),
-            "intent_contrib": ("Intent Coverage", "Fraction of required details (dates, amounts) found in draft"),
-            "hallucination_contrib": ("Hallucination", "-1.0 per fabricated detail (date/amount not from user)"),
-            "faithfulness_contrib": ("Faithfulness", "Word overlap or semantic similarity with source notes"),
-            "tone_contrib": ("Tone Match", "Fraction of style-preset markers found in draft"),
-        }
-        for key, (label, explanation) in comp_explanations.items():
-            val = comp.get(key)
-            if val is None:
-                continue
-            val_f = float(val)
-            if val_f > 0:
-                cls, sign = "pass", "+"
-            elif val_f < 0:
-                cls, sign = "fail", ""
-            else:
-                cls, sign = "pass", ""
-            score_rows.append(
-                f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'
-                f'<td style="padding:5px 10px;font-weight:600;color:var(--text);">{label}</td>'
-                f'<td style="padding:5px 10px;">'
-                f'<span style="color:{"var(--accent2)" if val_f > 0 else "var(--danger)" if val_f < 0 else "var(--muted)"};">{sign}{val_f:.3f}</span></td>'
-                f'<td style="padding:5px 10px;font-size:11px;color:var(--subtle);">{explanation}</td>'
-                f'</tr>'
-            )
-        if score_rows:
+        # Gather context for explanations
+        faith_exp = sv.get("faithfulness_explanation", {})
+        fw = faith_exp.get("found_in_draft", [])
+        mw = faith_exp.get("missing_from_draft", [])
+        tf = sv.get("tone_markers_found", [])
+        tm = sv.get("tone_markers_missing", [])
+        preset = sv.get("style_preset", "Professional")
+        np_list = sv.get("next_step_matched_phrases", [])
+        hn = sv.get("halluc_notes", [])
+        wc_a = sv.get("word_count", "?")
+        wc_t = rubric.get("word_count_target", "?")
+
+        fv = float(comp.get("faithfulness_contrib", 0))
+        f_reason = (f"Good coverage. Found: {', '.join(fw[:5])}" if fv > 0.3
+                    else f"Partial. Found: {', '.join(fw[:3])}. Missing: {', '.join(mw[:3])}" if fv > 0
+                    else f"Very low overlap. Missing: {', '.join(mw[:5])}" if mw else "No overlap.")
+        f_tip = f"Include these words: {', '.join(mw[:5])}" if mw else ""
+
+        hv = float(comp.get("hallucination_contrib", 0))
+        h_reason = f"Fabricated: {', '.join(hn)}" if hv < 0 else "No fabricated details."
+        h_tip = "Remove invented dates/amounts not in your notes." if hv < 0 else ""
+
+        iv = float(comp.get("intent_contrib", 0))
+        i_reason = "All required details present." if iv >= 0.8 else ("Partial details." if iv > 0 else "No specific details required.")
+        i_tip = "Add specific dates, amounts, names to notes." if iv < 0.5 else ""
+
+        tv = float(comp.get("tone_contrib", 0))
+        t_reason = (f"Strong {preset}. Found: {', '.join(tf[:3])}" if tv >= 0.5
+                    else f"Partial {preset}. Found: {', '.join(tf[:2])}. Missing: {', '.join(tm[:2])}" if tv > 0
+                    else f"No {preset} markers. Expected: {', '.join(tm[:3])}" if tm else "No markers defined.")
+        t_tip = f"Use phrases like: {', '.join(tm[:3])}" if tm else ""
+
+        nv = float(comp.get("next_step_contrib", 0))
+        pn = [p.get("phrase", p) if isinstance(p, dict) else p for p in np_list[:3]]
+        n_reason = f"Found: {', '.join(pn)}" if nv > 0 else "No actionable phrases detected."
+        n_tip = "Add 'please let me know' or similar." if nv <= 0 else ""
+
+        sbv = float(comp.get("subject_contrib", 0))
+        s_reason = "Subject line correct." if sbv >= 0 else "Subject line missing or wrongly present."
+        s_tip = "Add 'Subject:' for email, remove for WhatsApp/Teams." if sbv < 0 else ""
+
+        wv = float(comp.get("word_size_contrib", 0))
+        w_reason = f"Word count ({wc_a}) in target ({wc_t})." if wv >= 0.8 else f"Word count ({wc_a}) outside target ({wc_t})."
+        w_tip = f"Aim for {wc_t} words." if wv < 0.5 else ""
+
+        cv = float(comp.get("closing_contrib", 0))
+        c_reason = "Sign-off found." if cv > 0 else "No sign-off detected."
+        c_tip = "Add Sincerely, Best regards, or Thanks." if cv <= 0 else ""
+
+        mv = float(comp.get("short_contrib", 0))
+        m_reason = f"Meets minimum ({wc_a} words)." if mv > 0 else f"Too short ({wc_a} words, need 40+)."
+        m_tip = "Add more context to reach 40+ words." if mv <= 0 else ""
+
+        rows_data = [
+            ("Faithfulness", comp.get("faithfulness_contrib"), 1.5, "Overlap with your notes", f_reason, f_tip),
+            ("Hallucination", comp.get("hallucination_contrib"), 1.4, "-1.0 per fabrication", h_reason, h_tip),
+            ("Intent", comp.get("intent_contrib"), 1.2, "Required details present", i_reason, i_tip),
+            ("Tone", comp.get("tone_contrib"), 1.1, f"{preset} markers", t_reason, t_tip),
+            ("Next Step", comp.get("next_step_contrib"), 0.9, "Actionable phrases", n_reason, n_tip),
+            ("Subject", comp.get("subject_contrib"), 0.8, "Channel compliance", s_reason, s_tip),
+            ("Word Count", comp.get("word_size_contrib"), 0.6, f"Target: {wc_t}", w_reason, w_tip),
+            ("Closing", comp.get("closing_contrib"), 0.5, "Sign-off presence", c_reason, c_tip),
+            ("Min Length", comp.get("short_contrib"), 0.4, "40+ words", m_reason, m_tip),
+        ]
+        srows = [_adv_row(*r) for r in rows_data if r[1] is not None]
+        if srows:
             adv_parts.append(
-                f'<div style="margin-bottom:14px;">'
-                f'<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">SCORE BREAKDOWN (SELECTED VARIANT)</div>'
+                f'{_adv_hdr.format("Score Breakdown (sorted by importance)")}'
                 f'<table style="width:100%;border-collapse:collapse;font-size:13px;color:var(--text-secondary,#d4d4d8);">'
                 f'<thead><tr style="border-bottom:1px solid var(--border);color:var(--subtle);">'
                 f'<th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;">Component</th>'
-                f'<th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;">Value</th>'
-                f'<th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;">How It Works</th>'
-                f'</tr></thead>'
-                f'<tbody>{"".join(score_rows)}</tbody></table>'
-                f'</div>'
+                f'<th style="padding:5px 10px;text-align:center;font-size:10px;text-transform:uppercase;">Raw</th>'
+                f'<th style="padding:5px 10px;text-align:center;font-size:10px;text-transform:uppercase;">Weight</th>'
+                f'<th style="padding:5px 10px;text-align:center;font-size:10px;text-transform:uppercase;">Weighted</th>'
+                f'<th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;">Rule</th>'
+                f'</tr></thead><tbody>{"".join(srows)}</tbody></table>'
             )
 
-    # 4b: Next-step matched phrases
-    matched_phrases = (sel_variant or {}).get("next_step_matched_phrases", [])
-    if matched_phrases:
-        phrase_items = "".join(
-            f'<span style="display:inline-block;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);'
-            f'border-radius:6px;padding:2px 10px;margin:2px 4px 2px 0;font-size:12px;color:var(--accent-hover,#818cf8);">'
-            f'"{p.get("phrase", p) if isinstance(p, dict) else p}"'
-            f'{" (w=" + str(p.get("weight", "")) + ")" if isinstance(p, dict) and "weight" in p else ""}'
-            f'</span>'
-            for p in matched_phrases
-        )
-        adv_parts.append(
-            f'<div style="margin-bottom:14px;">'
-            f'<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">MATCHED NEXT-STEP PHRASES</div>'
-            f'<div>{phrase_items}</div>'
-            f'</div>'
-        )
+        # Faithfulness deep dive
+        if fw or mw:
+            method = faith_exp.get("method", "word_overlap")
+            ml = "Sentence Embeddings (all-MiniLM-L6-v2)" if method == "sentence_embeddings" else "Word Overlap (fallback)"
+            adv_parts.append(
+                f'{_adv_hdr.format("Faithfulness Detail")}'
+                f'<div style="font-size:12px;color:var(--subtle);margin-bottom:8px;">Method: {ml}</div>'
+                f'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Found in draft:</div>'
+                f'<div style="margin-bottom:8px;">{"".join(_adv_pill_pass.format(w) for w in fw[:12]) or "<em style=color:var(--subtle)>none</em>"}</div>'
+                f'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Missing from draft:</div>'
+                f'<div style="margin-bottom:8px;">{"".join(_adv_pill_fail.format(w) for w in mw[:12]) or "<em style=color:var(--subtle)>none</em>"}</div>'
+            )
 
-    # 4c: Hallucination notes
-    halluc_notes = (sel_variant or {}).get("halluc_notes", [])
-    if halluc_notes:
-        note_items = "".join(
-            f'<div style="padding:4px 0;font-size:12px;color:var(--danger);">&#9888; {n}</div>'
-            for n in halluc_notes
-        )
-        adv_parts.append(
-            f'<div style="margin-bottom:14px;">'
-            f'<div style="font-size:12px;font-weight:600;color:var(--danger);margin-bottom:4px;">HALLUCINATION NOTES</div>'
-            f'{note_items}</div>'
-        )
+        # Tone deep dive
+        if tf or tm:
+            adv_parts.append(
+                f'{_adv_hdr.format(f"Tone Detail ({preset} preset)")}'
+                f'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Found:</div>'
+                f'<div style="margin-bottom:8px;">{"".join(_adv_pill_pass.format(m) for m in tf) or "<em style=color:var(--subtle)>none</em>"}</div>'
+                f'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Try using these:</div>'
+                f'<div style="margin-bottom:8px;">{"".join(_adv_pill_fail.format(m) for m in tm) or "<em style=color:var(--subtle)>all found!</em>"}</div>'
+            )
 
-    # 4d: Per-variant comparison table
+        # Hallucination notes
+        if hn:
+            adv_parts.append(
+                f'{_adv_hdr.format("Hallucination Notes")}'
+                + "".join(f'<div style="padding:4px 0;font-size:12px;color:var(--danger);">&#9888; {n}</div>' for n in hn)
+            )
+
+    # Per-variant comparison table
     if scored:
         rows = []
         for v in scored:
@@ -1144,7 +1404,6 @@ def build_request(
     purpose: str,
     audience: str,
     tone: str,
-    language: str,
     channel: str,
     include_subject: bool,
     word_size: str,
@@ -1172,7 +1431,6 @@ def build_request(
         purpose=purpose.strip(),
         audience=audience.strip(),
         tone=tone.strip(),
-        language=language.strip(),
         channel=channel.strip(),
         include_subject=(include_subject and channel.strip().lower() == "email"),
         word_size=word_size,
@@ -1233,13 +1491,16 @@ def _preset_params(style_preset: str, creativity_intensity: float) -> dict:
     }
 
 
+def _empty_draft_output():
+    return "", "", "", "", "", _build_step_indicator(0)
+
+
 def generate_draft(
     raw_notes: str,
     user_answers: str,
     purpose: str,
     audience: str,
     tone: str,
-    language: str,
     channel: str,
     include_subject: bool,
     word_size: str,
@@ -1256,7 +1517,19 @@ def generate_draft(
     repeat_penalty: float,
     presence_penalty: float,
     frequency_penalty: float,
+    llm_provider: str = "Mock (demo)",
+    openrouter_model: str = "mistralai/mistral-7b-instruct",
 ):
+    # -- Input validation --
+    if not raw_notes or not raw_notes.strip():
+        gr.Warning("Please enter your raw notes before generating a draft.")
+        return _empty_draft_output()
+    if len(raw_notes.strip()) < 10:
+        gr.Warning("Your notes are very short. Consider adding more detail for a better draft.")
+    if llm_provider and llm_provider.strip().lower().startswith("openrouter") and not os.getenv("OPENROUTER_API_KEY"):
+        gr.Warning("OpenRouter API key not set. Add OPENROUTER_API_KEY to your .env file or switch to Mock.")
+        return _empty_draft_output()
+
     if generation_mode.strip().lower().startswith("preset"):
         params = _preset_params(style_preset=style_preset, creativity_intensity=creativity_intensity)
         temperature = params["temperature"]
@@ -1274,7 +1547,6 @@ def generate_draft(
         purpose=purpose,
         audience=audience,
         tone=tone,
-        language=language,
         channel=channel,
         include_subject=include_subject,
         word_size=word_size,
@@ -1290,12 +1562,36 @@ def generate_draft(
         frequency_penalty=frequency_penalty,
     )
 
+    provider = (llm_provider or "").strip().lower()
     try:
-        model_name = os.getenv("OLLAMA_MODEL", "mistral:7b-instruct-q4_0")
-        llm_client = get_ollama_client(model_name=model_name)
+        if provider.startswith("openrouter"):
+            llm_client = get_openrouter_client(model_name=openrouter_model)
+        elif provider.startswith("ollama"):
+            model_name = os.getenv("OLLAMA_MODEL", "mistral:7b-instruct-q4_0")
+            llm_client = get_ollama_client(model_name=model_name)
+        else:
+            llm_client = MockLLMClient()
         resp = run_draft_to_ready(req, llm_client=llm_client)
-    except Exception:
-        resp = run_draft_to_ready(req, llm_client=MockLLMClient())
+    except _requests_lib.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 401:
+            gr.Warning("Invalid OpenRouter API key. Check your .env file or switch to Mock mode.")
+        elif e.response is not None and e.response.status_code == 429:
+            gr.Warning("Rate limit reached. Wait a moment and try again.")
+        else:
+            gr.Warning(f"API error: {getattr(e.response, 'status_code', 'unknown')}")
+        return _empty_draft_output()
+    except _requests_lib.exceptions.ConnectionError:
+        if provider.startswith("ollama"):
+            gr.Warning("Ollama is not running. Start it with 'ollama serve' or switch to OpenRouter/Mock.")
+        else:
+            gr.Warning("Connection failed. Check your network or switch providers.")
+        return _empty_draft_output()
+    except ValueError as e:
+        gr.Warning(str(e))
+        return _empty_draft_output()
+    except Exception as e:
+        gr.Warning(f"Unexpected error: {str(e)[:200]}")
+        return _empty_draft_output()
 
     existing_answers = _extract_answers_part(user_answers or "")
 
@@ -1321,14 +1617,20 @@ def generate_draft(
 
 
 # ---------------------------------------------------------------------------
+# Force dark mode JS
+# ---------------------------------------------------------------------------
+FORCE_DARK_JS = "() => { document.documentElement.classList.add('dark'); }"
+
+
+# ---------------------------------------------------------------------------
 # Gradio UI
 # ---------------------------------------------------------------------------
-with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
+with gr.Blocks(title="Draft-to-Ready Writing Agent", js=FORCE_DARK_JS) as demo:
 
     # ===================================================================
     # PAGE 1: LANDING PAGE
     # ===================================================================
-    with gr.Column(visible=True) as landing_page:
+    with gr.Column(visible=True, elem_id="landing-page") as landing_page:
         gr.HTML(LANDING_PAGE_HTML)
         btn_get_started = gr.Button(
             "Get Started",
@@ -1358,12 +1660,34 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
                     raw_notes = gr.Textbox(
                         label="Your raw notes / bullets",
                         lines=8,
-                        placeholder="Dump your bullet points, fragments, or rough ideas here...",
+                        placeholder="I need to email my professor Dr. Smith about extending the deadline for my CS101 assignment. Reason: I was sick last week with the flu and couldn't complete it. Original deadline was March 20.",
                     )
                     user_answers = gr.Textbox(
                         label="Your answers to questions",
                         lines=4,
-                        placeholder="Leave empty on first run. If the agent asks questions, answer them here and click Generate again.",
+                        placeholder="Type your answers to the agent's questions here, then click Generate again.",
+                    )
+                    gr.Markdown('<p style="color:var(--subtle);font-size:12px;margin:4px 0 8px;">After clicking Generate, the agent may ask clarifying questions. Answer them above and click Generate again.</p>')
+
+                # Card: LLM Provider
+                with gr.Group(elem_classes=["card-section"]):
+                    gr.Markdown("## LLM Provider")
+                    _has_key = bool(os.getenv("OPENROUTER_API_KEY"))
+                    llm_provider = gr.Dropdown(
+                        choices=["OpenRouter (cloud)", "Ollama (local)", "Mock (demo)"],
+                        value="OpenRouter (cloud)" if _has_key else "Mock (demo)",
+                        label="Provider",
+                    )
+                    openrouter_model = gr.Dropdown(
+                        choices=[
+                            "mistralai/mistral-7b-instruct",
+                            "meta-llama/llama-3-8b-instruct",
+                            "google/gemma-2-9b-it",
+                            "qwen/qwen-2.5-7b-instruct",
+                        ],
+                        value=os.getenv("OPENROUTER_MODEL", "mistralai/mistral-7b-instruct"),
+                        label="OpenRouter model",
+                        visible=_has_key,
                     )
 
                 # Card: Context
@@ -1372,12 +1696,12 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
                     purpose = gr.Textbox(
                         label="Purpose",
                         value="Email reply",
-                        placeholder="e.g., email reply, apology, request",
+                        placeholder="e.g., deadline extension, apology letter, meeting request, complaint",
                     )
                     audience = gr.Textbox(
                         label="Audience",
                         value="Teacher",
-                        placeholder="e.g., teacher, landlord, manager",
+                        placeholder="e.g., Professor Smith, HR department, landlord, customer support",
                     )
                     with gr.Row():
                         tone = gr.Dropdown(
@@ -1385,17 +1709,18 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
                             value="Formal",
                             label="Tone",
                         )
-                        language = gr.Textbox(label="Language", value="English")
-                    with gr.Row():
                         channel = gr.Dropdown(
                             choices=["Email", "WhatsApp", "Microsoft Teams"],
                             value="Email",
                             label="Channel",
                         )
-                        include_subject = gr.Checkbox(
-                            label="Include subject line",
-                            value=True,
-                        )
+                    include_subject = gr.Checkbox(
+                        label="Include subject line",
+                        value=True,
+                    )
+
+                # Helper text above generate button
+                gr.Markdown('<p style="color:var(--subtle);font-size:12px;text-align:center;margin-bottom:4px;">The agent will ask clarifying questions → generate multiple draft variants → score and select the best one</p>')
 
                 # Generate button
                 btn_draft = gr.Button("Generate Draft", variant="primary")
@@ -1460,12 +1785,14 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
                 # Card: Draft Stage
                 with gr.Group(elem_classes=["card-section"]):
                     gr.Markdown("## Draft Stage")
+                    gr.Markdown('<p style="color:var(--subtle);font-size:12px;margin:4px 0 8px;">Multiple variants generated and scored. The highest-scoring draft is shown based on faithfulness, tone, and formatting.</p>')
                     questions_out = gr.HTML(label="Clarifying questions")
                     draft_out = gr.Textbox(label="Polished draft", lines=12)
 
                 # Card: Finalization
                 with gr.Group(elem_classes=["card-section"]):
                     gr.Markdown("## Finalization")
+                    gr.Markdown('<p style="color:var(--subtle);font-size:12px;margin:4px 0 8px;">Click Finalize Draft to run an editing pass that addresses issues found by the self-check rubric.</p>')
                     rubric_out = gr.HTML(label="Self-check rubric")
                     final_out = gr.Textbox(label="Final version", lines=12)
 
@@ -1497,6 +1824,16 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
         outputs=[landing_page, app_page],
     )
 
+    # -- Toggle OpenRouter model dropdown --
+    def _toggle_openrouter_model(provider: str):
+        return gr.update(visible=provider.startswith("OpenRouter"))
+
+    llm_provider.change(
+        fn=_toggle_openrouter_model,
+        inputs=[llm_provider],
+        outputs=[openrouter_model],
+    )
+
     # -- Toggle advanced settings --
     def _toggle_advanced_settings(mode: str):
         mode_norm = (mode or "").strip().lower()
@@ -1512,23 +1849,25 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
     # -- Draft generation handlers --
     all_inputs = [
         raw_notes, user_answers, purpose, audience, tone,
-        language, channel, include_subject, word_size, draft_variants,
+        channel, include_subject, word_size, draft_variants,
         generation_mode, style_preset, creativity_intensity, randomize_seed, seed,
         temperature, top_p, top_k, repeat_penalty, presence_penalty, frequency_penalty,
+        llm_provider, openrouter_model,
     ]
     all_outputs = [questions_out, draft_out, rubric_out, final_out, user_answers, step_indicator]
 
     def _generate_draft_only(
         raw_notes_: str, user_answers_: str, purpose_: str, audience_: str, tone_: str,
-        language_: str, channel_: str, include_subject_: bool, word_size_: str,
+        channel_: str, include_subject_: bool, word_size_: str,
         draft_variants_: int, generation_mode_: str, style_preset_: str,
         creativity_intensity_: float, randomize_seed_: bool, seed_: int,
         temperature_: float, top_p_: float, top_k_: int,
         repeat_penalty_: float, presence_penalty_: float, frequency_penalty_: float,
+        llm_provider_: str, openrouter_model_: str,
     ):
         return generate_draft(
             raw_notes=raw_notes_, user_answers=user_answers_, purpose=purpose_,
-            audience=audience_, tone=tone_, language=language_, channel=channel_,
+            audience=audience_, tone=tone_, channel=channel_,
             include_subject=include_subject_, word_size=word_size_,
             draft_variants=draft_variants_, finalize_requested=False,
             generation_mode=generation_mode_, style_preset=style_preset_,
@@ -1536,19 +1875,21 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
             seed=seed_, temperature=temperature_, top_p=top_p_, top_k=top_k_,
             repeat_penalty=repeat_penalty_, presence_penalty=presence_penalty_,
             frequency_penalty=frequency_penalty_,
+            llm_provider=llm_provider_, openrouter_model=openrouter_model_,
         )
 
     def _finalize_draft_only(
         raw_notes_: str, user_answers_: str, purpose_: str, audience_: str, tone_: str,
-        language_: str, channel_: str, include_subject_: bool, word_size_: str,
+        channel_: str, include_subject_: bool, word_size_: str,
         draft_variants_: int, generation_mode_: str, style_preset_: str,
         creativity_intensity_: float, randomize_seed_: bool, seed_: int,
         temperature_: float, top_p_: float, top_k_: int,
         repeat_penalty_: float, presence_penalty_: float, frequency_penalty_: float,
+        llm_provider_: str, openrouter_model_: str,
     ):
         return generate_draft(
             raw_notes=raw_notes_, user_answers=user_answers_, purpose=purpose_,
-            audience=audience_, tone=tone_, language=language_, channel=channel_,
+            audience=audience_, tone=tone_, channel=channel_,
             include_subject=include_subject_, word_size=word_size_,
             draft_variants=draft_variants_, finalize_requested=True,
             generation_mode=generation_mode_, style_preset=style_preset_,
@@ -1556,6 +1897,7 @@ with gr.Blocks(title="Draft-to-Ready Writing Agent") as demo:
             seed=seed_, temperature=temperature_, top_p=top_p_, top_k=top_k_,
             repeat_penalty=repeat_penalty_, presence_penalty=presence_penalty_,
             frequency_penalty=frequency_penalty_,
+            llm_provider=llm_provider_, openrouter_model=openrouter_model_,
         )
 
     def _new_draft():

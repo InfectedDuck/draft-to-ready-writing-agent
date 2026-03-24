@@ -1,0 +1,7 @@
+gradio
+pydantic
+requests
+python-dotenv
+pytest
+sentence-transformers
+plotly

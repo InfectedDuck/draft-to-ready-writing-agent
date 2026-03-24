@@ -1,0 +1,87 @@
+[
+  {
+    "id": "clarify_extension_deposit_missing_details",
+    "input": {
+      "raw_notes": "Need an email for deposit pay deadline extension.",
+      "user_answers": "",
+      "purpose": "Extension request",
+      "audience": "Admissions office",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Email",
+      "include_subject": true,
+      "word_size": "Medium",
+      "finalize_requested": false
+    },
+    "expect": {
+      "needs_clarification": true,
+      "has_draft": true,
+      "has_final": false,
+      "min_questions": 2
+    }
+  },
+  {
+    "id": "finalize_extension_with_details_email",
+    "input": {
+      "raw_notes": "Need an email for deposit pay deadline extension.",
+      "user_answers": "The current deadline is March 28 at 5 PM. I request an extension to April 10 at 5 PM. Deposit amount is USD 500. This is for Northbridge University, MSc Data Science.",
+      "purpose": "Extension request",
+      "audience": "Admissions office",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Email",
+      "include_subject": true,
+      "word_size": "Medium",
+      "finalize_requested": true
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": true,
+      "contains_subject_when_email": true
+    }
+  },
+  {
+    "id": "whatsapp_channel_no_subject",
+    "input": {
+      "raw_notes": "Ask for an update about my request.",
+      "user_answers": "Please ask them to confirm by Friday 3 PM. The fee payment amount is INR 25000 for my university update.",
+      "purpose": "Update request",
+      "audience": "Coordinator",
+      "tone": "Friendly",
+      "language": "English",
+      "channel": "WhatsApp",
+      "include_subject": false,
+      "word_size": "Small",
+      "finalize_requested": true
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": true,
+      "forbid_subject": true
+    }
+  },
+  {
+    "id": "draft_only_when_not_finalized",
+    "input": {
+      "raw_notes": "Draft a Teams message asking for a short extension.",
+      "user_answers": "Ask for extension to Monday 10 AM for tuition payment of INR 25000.",
+      "purpose": "Extension request",
+      "audience": "Department admin",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Microsoft Teams",
+      "include_subject": false,
+      "word_size": "Small",
+      "finalize_requested": false
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": false,
+      "forbid_subject": true
+    }
+  }
+]
+

@@ -1,0 +1,11 @@
+{
+  "w_closing": 1.0,
+  "w_next_step": 0.6,
+  "w_short": 1.0,
+  "w_subject": 1.0,
+  "w_word_size": 1.0,
+  "w_intent": 0.6,
+  "w_hallucination": 1.0,
+  "w_tone": 0.8,
+  "w_faithfulness": 0.8
+}

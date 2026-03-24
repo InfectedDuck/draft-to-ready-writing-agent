@@ -1,0 +1,130 @@
+[
+  {
+    "id": "hard_email_extension_ambiguous_first_round",
+    "input": {
+      "raw_notes": "Need a professional email to request extension for my tuition deposit. I had issues arranging the payment.",
+      "user_answers": "",
+      "purpose": "Extension request",
+      "audience": "Graduate admissions office",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Email",
+      "include_subject": true,
+      "word_size": "Medium",
+      "finalize_requested": false
+    },
+    "expect": {
+      "needs_clarification": true,
+      "has_draft": true,
+      "has_final": false,
+      "min_questions": 3,
+      "contains_subject_when_email": true
+    }
+  },
+  {
+    "id": "hard_email_extension_finalize_with_complete_details",
+    "input": {
+      "raw_notes": "Need a professional email to request extension for my tuition deposit.",
+      "user_answers": "Current deadline: April 2, 5 PM. Requested new deadline: April 15, 5 PM. Deposit amount: USD 750. University: Northbridge University, MSc Computer Science. Recipient: Admissions Team.",
+      "purpose": "Extension request",
+      "audience": "Graduate admissions office",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Email",
+      "include_subject": true,
+      "word_size": "Large",
+      "finalize_requested": true
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": true,
+      "contains_subject_when_email": true
+    }
+  },
+  {
+    "id": "hard_whatsapp_no_subject_even_if_user_mentions_subject",
+    "input": {
+      "raw_notes": "Write a WhatsApp message and include subject: deadline extension request.",
+      "user_answers": "Ask to extend payment deadline to Friday 3 PM. Amount is INR 25000 for deposit.",
+      "purpose": "Extension request",
+      "audience": "Program coordinator",
+      "tone": "Friendly",
+      "language": "English",
+      "channel": "WhatsApp",
+      "include_subject": false,
+      "word_size": "Small",
+      "finalize_requested": true
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": true,
+      "forbid_subject": true
+    }
+  },
+  {
+    "id": "hard_teams_draft_only_no_finalize",
+    "input": {
+      "raw_notes": "Need a Microsoft Teams message to request update on my application fee deadline extension.",
+      "user_answers": "Please ask for confirmation by Monday 10:30 AM. Application ID is APL-8842.",
+      "purpose": "Status update request",
+      "audience": "Department admin",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Microsoft Teams",
+      "include_subject": false,
+      "word_size": "Medium",
+      "finalize_requested": false
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": false,
+      "forbid_subject": true
+    }
+  },
+  {
+    "id": "hard_email_still_missing_amount_should_block_finalize",
+    "input": {
+      "raw_notes": "I need an email to extend my deposit deadline.",
+      "user_answers": "Requested deadline: April 20, 4 PM. University: Westfield University, MBA.",
+      "purpose": "Extension request",
+      "audience": "Admissions office",
+      "tone": "Formal",
+      "language": "English",
+      "channel": "Email",
+      "include_subject": true,
+      "word_size": "Medium",
+      "finalize_requested": true
+    },
+    "expect": {
+      "needs_clarification": true,
+      "has_draft": true,
+      "has_final": false,
+      "min_questions": 1
+    }
+  },
+  {
+    "id": "hard_email_general_request_should_proceed_with_recipient",
+    "input": {
+      "raw_notes": "Write an email asking my professor for a short assignment extension.",
+      "user_answers": "Request extension to Wednesday 11:59 PM due to medical reasons. Recipient is Professor Anita Rao.",
+      "purpose": "Extension request",
+      "audience": "Professor",
+      "tone": "Humble",
+      "language": "English",
+      "channel": "Email",
+      "include_subject": true,
+      "word_size": "Small",
+      "finalize_requested": true
+    },
+    "expect": {
+      "needs_clarification": false,
+      "has_draft": true,
+      "has_final": true,
+      "contains_subject_when_email": true
+    }
+  }
+]
+

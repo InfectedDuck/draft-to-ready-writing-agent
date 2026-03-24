@@ -86,7 +86,7 @@ Generating multiple variants and scoring them deterministically avoids the rando
 
 ## Live Demo
 
-> Hugging Face Spaces deployment coming soon.
+**[Try it live on Hugging Face Spaces](https://huggingface.co/spaces/InfectedDuck/Draft-to-ready-writing-agent)**
 
 ---
 

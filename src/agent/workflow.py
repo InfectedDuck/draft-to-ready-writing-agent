@@ -99,7 +99,7 @@ def _basic_rubric_check(draft: str, req: Optional[DraftRequest] = None) -> Tuple
     )
 
     # --- Paragraph structure (not a wall of text) ---
-    lines = [l.strip() for l in (draft or "").splitlines() if l.strip()]
+    lines = [ln.strip() for ln in (draft or "").splitlines() if ln.strip()]
     rubric["has_paragraphs"] = len(lines) >= 3
 
     # --- Channel-specific checks ---
@@ -234,7 +234,6 @@ def _score_intent_and_hallucination(req: DraftRequest, draft: str) -> tuple[floa
 
     has_date_in_user = _has_date_like_text(combined_user)
     has_amount_in_user = _has_amount_like_text(combined_user)
-    has_university_kw_in_user = _mentions_university_keywords(combined_user)
 
     # Required coverage (only when user already provided the critical info type).
     required_total = 0

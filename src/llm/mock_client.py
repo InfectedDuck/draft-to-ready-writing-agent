@@ -123,8 +123,7 @@ class MockLLMClient:
             # Expected format includes lines like: "Index 0" then text.
             import re
 
-            blocks = re.split(r"\n\n---\n\n", prompt)
-            # Fallback: find all "Index N" occurrences.
+            # Find all "Index N" occurrences.
             candidates: list[tuple[int, str]] = []
             for match in re.finditer(r"Index\s+(\d+)\s*\n", prompt):
                 idx = int(match.group(1))

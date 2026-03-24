@@ -10,10 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.agent.workflow import run_draft_to_ready
-from src.llm.mock_client import MockLLMClient
-from src.llm.ollama_client import get_ollama_client
-from src.schemas.models import DraftRequest
+from src.agent.workflow import run_draft_to_ready  # noqa: E402
+from src.llm.mock_client import MockLLMClient  # noqa: E402
+from src.llm.ollama_client import get_ollama_client  # noqa: E402
+from src.schemas.models import DraftRequest  # noqa: E402
 
 
 WORD_SIZE_RANGES = {
@@ -145,7 +145,6 @@ def check_case(
 
     passing_scores: list[float] = []
     selected_pass = False
-    selected_ok = False
     max_passing_score = None
 
     for cand in scored:
@@ -170,7 +169,6 @@ def check_case(
             passing_scores.append(float(cand_score))
 
         if cand_idx == selected_idx:
-            selected_ok = cand_pass
             selected_pass = cand_pass
 
     if passing_scores:

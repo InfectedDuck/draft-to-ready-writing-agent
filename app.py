@@ -1,17 +1,17 @@
 import os
 import random
 
+import gradio as gr
 import requests as _requests_lib
 from dotenv import load_dotenv
-load_dotenv()
-
-import gradio as gr
 
 from src.agent.workflow import run_draft_to_ready
 from src.schemas.models import DraftRequest
 from src.llm.ollama_client import get_ollama_client
 from src.llm.openrouter_client import get_openrouter_client
 from src.llm.mock_client import MockLLMClient
+
+load_dotenv()
 
 
 # ---------------------------------------------------------------------------

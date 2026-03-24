@@ -1,6 +1,5 @@
 import json
 import itertools
-import os
 import subprocess
 import sys
 from pathlib import Path
